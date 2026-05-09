@@ -3,6 +3,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand
 
 from config import BOT_TOKEN
 from database.db import create_tables
@@ -32,6 +33,15 @@ async def main() -> None:
 
     await create_tables()
     await restore_reminders(bot)
+
+    await bot.set_my_commands([
+        BotCommand(command="start", description="🏠 Главное меню"),
+        BotCommand(command="today", description="📅 Сводка дня"),
+        BotCommand(command="plans", description="📋 Планы на день"),
+        BotCommand(command="shopping", description="🛒 Список покупок"),
+        BotCommand(command="reminders", description="⏰ Напоминания"),
+        BotCommand(command="stats", description="📊 Статистика"),
+    ])
 
     logger.info("Бот запущен")
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

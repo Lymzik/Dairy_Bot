@@ -195,7 +195,7 @@ async def remind_manual_time_received(message: Message, state: FSMContext) -> No
     await _show_reminders(message, uid)
 
 
-# --- Выбор времени через кнопки ---
+# --- Хранилище состояний ---
 
 _text_pending: dict[int, str] = {}
 _edit_pending: dict[int, int] = {}  # user_id -> reminder_id

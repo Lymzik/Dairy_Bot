@@ -76,6 +76,7 @@ def shopping_list_kb(items: list[dict]) -> InlineKeyboardMarkup:
                     callback_data=f"shop:del:{item['id']}",
                 ),
             )
+    builder.row(InlineKeyboardButton(text="➕ Добавить продукт", callback_data="shop:add"))
     builder.row(
         InlineKeyboardButton(text="🧹 Очистить купленные", callback_data="shop:clearbought"),
         InlineKeyboardButton(text="🔄 Обновить", callback_data="shop:refresh"),

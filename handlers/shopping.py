@@ -1,10 +1,16 @@
 from aiogram import Router, F
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery
 from database import shopping as db
 from keyboards.inline import shopping_list_kb
 
 router = Router()
+
+
+class ShoppingForm(StatesGroup):
+    waiting_for_item = State()
 
 
 def _format_shopping(items: list[dict]) -> str:
@@ -134,6 +140,19 @@ async def shop_callback(call: CallbackQuery) -> None:
         await call.answer(f"Очищено: {count}")
         return
 
+    if action == "add":
+        await call.message.answer(
+            "🛒 Напиши что добавить в список покупок.\n\n"
+            "Можно сразу несколько через запятую:\n"
+            "<code>молоко, хлеб, яйца</code>",
+            parse_mode="HTML",
+        )
+        from aiogram.fsm.context import FSMContext
+        # Устанавливаем состояние через отдельный обработчик ниже
+        _shop_add_pending.add(call.from_user.id)
+        await call.answer()
+        return
+
     item_id = int(parts[2])
     if action == "buy":
         await db.mark_bought(item_id, True)
@@ -147,3 +166,24 @@ async def shop_callback(call: CallbackQuery) -> None:
         parse_mode="HTML",
     )
     await call.answer()
+
+
+_shop_add_pending: set[int] = set()
+
+
+@router.message(F.text & ~F.text.startswith("/"))
+async def shop_add_receive(message: Message) -> None:
+    uid = message.from_user.id
+    if uid not in _shop_add_pending:
+        return
+    _shop_add_pending.discard(uid)
+    items_text = [t.strip() for t in message.text.split(",") if t.strip()]
+    for item in items_text:
+        await db.add_item(uid, item)
+    items = await db.get_shopping_list(uid)
+    added = len(items_text)
+    await message.answer(
+        f"✅ {'Добавлен 1 товар' if added == 1 else f'Добавлено товаров: {added}'}!\n\n{_format_shopping(items)}",
+        reply_markup=shopping_list_kb(items),
+        parse_mode="HTML",
+    )

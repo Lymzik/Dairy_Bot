@@ -62,6 +62,31 @@ def plans_list_kb(plans: list[dict]) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def remind_hour_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for hour in range(0, 24):
+        builder.button(
+            text=f"{hour:02d}",
+            callback_data=f"remtime:hour:{hour}",
+        )
+    builder.adjust(6)
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="remtime:cancel"))
+    return builder.as_markup()
+
+
+def remind_minute_kb(hour: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for minute in range(0, 60, 30):
+        builder.button(
+            text=f"{hour:02d}:{minute:02d}",
+            callback_data=f"remtime:minute:{hour}:{minute}",
+        )
+    builder.adjust(2)
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="remtime:back"))
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="remtime:cancel"))
+    return builder.as_markup()
+
+
 def shopping_list_kb(items: list[dict]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for i, item in enumerate(items, 1):

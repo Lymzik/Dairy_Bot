@@ -1,19 +1,18 @@
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery
 from database import reminders as db
-from keyboards.inline import reminders_list_kb, main_menu_kb
+from keyboards.inline import reminders_list_kb, main_menu_kb, remind_hour_kb, remind_minute_kb
 
 router = Router()
 
 
 class ReminderForm(StatesGroup):
-    waiting_for_new = State()
-    waiting_for_edit_time = State()
-    waiting_for_edit_text = State()
+    waiting_for_text = State()       # ввод текста перед выбором времени
+    waiting_for_edit_text = State()  # ввод нового текста при редактировании
 
 
 def _parse_remind_at(arg: str) -> datetime | None:
@@ -56,12 +55,12 @@ async def _show_reminders(target, uid: int, edit: bool = False) -> None:
         await target.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
+# --- Команды ---
+
 @router.message(Command("reminders"))
 async def cmd_reminders(message: Message) -> None:
     await _show_reminders(message, message.from_user.id)
 
-
-# --- Добавление через команду ---
 
 @router.message(Command("remind"))
 async def cmd_remind(message: Message) -> None:
@@ -131,121 +130,135 @@ async def cmd_delremind(message: Message) -> None:
     await _show_reminders(message, message.from_user.id)
 
 
-# --- FSM: добавление через кнопку ---
+# --- Добавление через кнопку: сначала текст, потом время ---
 
 @router.callback_query(F.data == "remind:add")
 async def remind_add_start(call: CallbackQuery, state: FSMContext) -> None:
-    await state.set_state(ReminderForm.waiting_for_new)
+    await state.set_state(ReminderForm.waiting_for_text)
     await call.message.answer(
-        "⏰ Введи напоминание в формате:\n\n"
-        "<code>14:30 текст</code> — сегодня\n"
-        "<code>15.05 14:30 текст</code> — конкретная дата\n\n"
-        "Например: <code>18:00 позвонить маме</code>",
+        "📝 Напиши текст напоминания:",
         parse_mode="HTML",
     )
     await call.answer()
 
 
-@router.message(ReminderForm.waiting_for_new)
-async def remind_add_receive(message: Message, state: FSMContext) -> None:
+@router.message(ReminderForm.waiting_for_text)
+async def remind_text_received(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
+    await state.update_data(remind_text=text)
     await state.clear()
-    args = message.text.strip()
-    parts = args.split(maxsplit=1)
-    time_part = parts[0]
-    text_part = parts[1] if len(parts) > 1 else ""
-
-    if len(parts) >= 2 and ":" in parts[1].split()[0]:
-        time_part = parts[0] + " " + parts[1].split()[0]
-        text_part = " ".join(parts[1].split()[1:])
-
-    remind_at = _parse_remind_at(time_part)
-
-    if remind_at is None or not text_part:
-        await message.answer(
-            "❗ Не понял формат. Попробуй так:\n"
-            "<code>18:00 позвонить маме</code>",
-            parse_mode="HTML",
-        )
-        return
-
-    if remind_at <= datetime.now():
-        await message.answer("❗ Время уже прошло. Укажи будущее время.")
-        return
-
-    from scheduler import schedule_reminder
-    reminder_id = await db.add_reminder(message.from_user.id, text_part, remind_at)
-    await schedule_reminder(reminder_id, message.from_user.id, text_part, remind_at)
-
     await message.answer(
-        f"✅ Напоминание установлено!\n"
-        f"🔔 <b>{remind_at.strftime('%d.%m.%Y в %H:%M')}</b>\n"
-        f"📝 {text_part}",
+        f"⏰ Выбери час для напоминания:\n\n<i>{text}</i>",
+        reply_markup=remind_hour_kb(),
         parse_mode="HTML",
     )
-    await _show_reminders(message, message.from_user.id)
+    # Сохраняем текст в pending для обработки выбора времени
+    _text_pending[message.from_user.id] = text
 
 
-# --- FSM: редактирование через кнопку ---
+# --- Выбор времени через кнопки ---
+
+_text_pending: dict[int, str] = {}
+_edit_pending: dict[int, int] = {}  # user_id -> reminder_id
+
+
+@router.callback_query(F.data.startswith("remtime:"))
+async def remtime_callback(call: CallbackQuery) -> None:
+    parts = call.data.split(":")
+    action = parts[1]
+    uid = call.from_user.id
+
+    if action == "cancel":
+        _text_pending.pop(uid, None)
+        _edit_pending.pop(uid, None)
+        await call.message.edit_text("❌ Отменено.")
+        await call.answer()
+        return
+
+    if action == "back":
+        text = _text_pending.get(uid, "")
+        await call.message.edit_text(
+            f"⏰ Выбери час для напоминания:\n\n<i>{text}</i>",
+            reply_markup=remind_hour_kb(),
+            parse_mode="HTML",
+        )
+        await call.answer()
+        return
+
+    if action == "hour":
+        hour = int(parts[2])
+        text = _text_pending.get(uid, "")
+        await call.message.edit_text(
+            f"⏰ Выбери минуты ({hour:02d}:?):\n\n<i>{text}</i>",
+            reply_markup=remind_minute_kb(hour),
+            parse_mode="HTML",
+        )
+        await call.answer()
+        return
+
+    if action == "minute":
+        hour = int(parts[2])
+        minute = int(parts[3])
+        text = _text_pending.pop(uid, None)
+        reminder_id = _edit_pending.pop(uid, None)
+
+        now = datetime.now()
+        remind_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        # Если время уже прошло сегодня — ставим на завтра
+        if remind_at <= now:
+            remind_at += timedelta(days=1)
+
+        from scheduler import schedule_reminder, cancel_reminder
+
+        if reminder_id:
+            # Редактирование существующего
+            cancel_reminder(reminder_id)
+            await db.delete_reminder(reminder_id)
+
+        if not text:
+            await call.answer("⚠️ Текст напоминания потерян, попробуй снова.")
+            return
+
+        new_id = await db.add_reminder(uid, text, remind_at)
+        await schedule_reminder(new_id, uid, text, remind_at)
+
+        day_label = "завтра" if remind_at.date() > now.date() else "сегодня"
+        await call.message.edit_text(
+            f"✅ Напоминание установлено на <b>{day_label} в {remind_at.strftime('%H:%M')}</b>!\n"
+            f"📝 {text}",
+            parse_mode="HTML",
+        )
+        await _show_reminders(call.message, uid)
+        await call.answer()
+
+
+# --- Редактирование через кнопку ---
 
 @router.callback_query(F.data.startswith("remind:edit:"))
 async def remind_edit_start(call: CallbackQuery, state: FSMContext) -> None:
     reminder_id = int(call.data.split(":")[2])
-    await state.update_data(edit_id=reminder_id)
-    await state.set_state(ReminderForm.waiting_for_edit_time)
+    _edit_pending[call.from_user.id] = reminder_id
+    await state.set_state(ReminderForm.waiting_for_edit_text)
     await call.message.answer(
-        "✏️ Введи новое время и текст:\n\n"
-        "<code>14:30 текст</code> — сегодня\n"
-        "<code>15.05 14:30 текст</code> — конкретная дата",
+        "✏️ Введи новый текст напоминания:",
         parse_mode="HTML",
     )
     await call.answer()
 
 
-@router.message(ReminderForm.waiting_for_edit_time)
-async def remind_edit_receive(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
-    reminder_id = data["edit_id"]
+@router.message(ReminderForm.waiting_for_edit_text)
+async def remind_edit_text_received(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
     await state.clear()
-
-    args = message.text.strip()
-    parts = args.split(maxsplit=1)
-    time_part = parts[0]
-    text_part = parts[1] if len(parts) > 1 else ""
-
-    if len(parts) >= 2 and ":" in parts[1].split()[0]:
-        time_part = parts[0] + " " + parts[1].split()[0]
-        text_part = " ".join(parts[1].split()[1:])
-
-    remind_at = _parse_remind_at(time_part)
-
-    if remind_at is None or not text_part:
-        await message.answer(
-            "❗ Не понял формат. Попробуй так:\n"
-            "<code>18:00 позвонить маме</code>",
-            parse_mode="HTML",
-        )
-        return
-
-    if remind_at <= datetime.now():
-        await message.answer("❗ Время уже прошло. Укажи будущее время.")
-        return
-
-    from scheduler import cancel_reminder, schedule_reminder
-    cancel_reminder(reminder_id)
-    await db.delete_reminder(reminder_id)
-    new_id = await db.add_reminder(message.from_user.id, text_part, remind_at)
-    await schedule_reminder(new_id, message.from_user.id, text_part, remind_at)
-
+    _text_pending[message.from_user.id] = text
     await message.answer(
-        f"✅ Напоминание обновлено!\n"
-        f"🔔 <b>{remind_at.strftime('%d.%m.%Y в %H:%M')}</b>\n"
-        f"📝 {text_part}",
+        f"⏰ Выбери новый час для напоминания:\n\n<i>{text}</i>",
+        reply_markup=remind_hour_kb(),
         parse_mode="HTML",
     )
-    await _show_reminders(message, message.from_user.id)
 
 
-# --- Inline callbacks ---
+# --- Inline callbacks (удаление, обновление) ---
 
 @router.callback_query(F.data.startswith("remind:"))
 async def remind_callback(call: CallbackQuery) -> None:

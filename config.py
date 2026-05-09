@@ -1,7 +1,9 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# load_dotenv только если файл .env существует (локальная разработка)
+# на Railway переменные уже в окружении, load_dotenv их не затирает
+load_dotenv(override=False)
 
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 

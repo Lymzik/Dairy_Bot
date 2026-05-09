@@ -15,7 +15,7 @@ async def _check_and_notify_carryover(target: Message, user_id: int) -> None:
         return
     lines = ["📌 <b>Вчера остались невыполненные задачи:</b>\n"]
     for i, p in enumerate(yesterday_undone, 1):
-        icon = "⚠️" if p["is_important"] else "⬜"
+        icon = "❗" if p["is_important"] else "⬜"
         lines.append(f"{i}. {icon} {p['text']}")
     lines.append("\nПеренести их на сегодня?")
     ids = [p["id"] for p in yesterday_undone]
@@ -33,7 +33,7 @@ def _format_plans(plans: list[dict]) -> str:
             text = f"<b>{text}</b>"
         if p["is_done"]:
             text = f"<s>{text}</s>"
-        icon = "✅" if p["is_done"] else ("⚠️" if p["is_important"] else "⬜")
+        icon = "✅" if p["is_done"] else ("❗" if p["is_important"] else "⬜")
         lines.append(f"{i}. {icon} {text}")
     return "\n".join(lines)
 
@@ -93,7 +93,7 @@ async def cmd_important(message: Message) -> None:
         return
     new_state = not bool(plan["is_important"])
     await db.set_plan_important(plan["id"], new_state)
-    status = "помечен как важный ⚠️" if new_state else "снята отметка важности"
+    status = "помечен как важный ❗" if new_state else "снята отметка важности"
     plans = await db.get_today_plans(message.from_user.id)
     await message.answer(
         f"Пункт #{args} {status}\n\n{_format_plans(plans)}",

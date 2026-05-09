@@ -49,7 +49,7 @@ def plans_list_kb(plans: list[dict]) -> InlineKeyboardMarkup:
             callback_data=f"plan:{'undone' if plan['is_done'] else 'done'}:{plan['id']}",
         )
         imp_btn = InlineKeyboardButton(
-            text=f"{'🔕' if plan['is_important'] else '⚠️'} #{i}",
+            text=f"{'🔕' if plan['is_important'] else '❗'} #{i}",
             callback_data=f"plan:{'unimp' if plan['is_important'] else 'imp'}:{plan['id']}",
         )
         del_btn = InlineKeyboardButton(

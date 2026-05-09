@@ -29,7 +29,7 @@ async def build_today_text(user_id: int) -> str:
                 text = f"<b>{text}</b>"
             if p["is_done"]:
                 text = f"<s>{text}</s>"
-            icon = "✅" if p["is_done"] else ("⚠️" if p["is_important"] else "⬜")
+            icon = "✅" if p["is_done"] else ("❗" if p["is_important"] else "⬜")
             lines.append(f"  {i}. {icon} {text}")
         done = sum(1 for p in plans if p["is_done"])
         lines.append(f"\n  <i>Выполнено: {done}/{len(plans)}</i>")

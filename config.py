@@ -1,15 +1,18 @@
 import os
-from pathlib import Path
 
-# Загружаем .env только при локальной разработке (файл существует)
-env_path = Path(__file__).parent / ".env"
-if env_path.exists():
+try:
     from dotenv import load_dotenv
-    load_dotenv(dotenv_path=env_path, override=False)
+    load_dotenv(override=False)
+except ImportError:
+    pass
 
 BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "")
 
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN не задан. На Railway: добавь в Variables. Локально: создай .env файл.")
+    raise ValueError(
+        "BOT_TOKEN не задан.\n"
+        "На Railway: добавь переменную BOT_TOKEN в разделе Variables.\n"
+        "Локально: создай файл .env с BOT_TOKEN=твой_токен"
+    )
 
 DB_PATH: str = os.environ.get("DB_PATH", "diary.db")

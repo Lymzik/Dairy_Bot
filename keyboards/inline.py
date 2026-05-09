@@ -76,10 +76,15 @@ def reminders_list_kb(reminders: list[dict]) -> InlineKeyboardMarkup:
     for i, r in enumerate(reminders, 1):
         builder.row(
             InlineKeyboardButton(
-                text=f"🗑 Удалить #{i}",
+                text=f"✏️ #{i}",
+                callback_data=f"remind:edit:{r['id']}",
+            ),
+            InlineKeyboardButton(
+                text=f"🗑 #{i}",
                 callback_data=f"remind:del:{r['id']}",
-            )
+            ),
         )
+    builder.row(InlineKeyboardButton(text="➕ Добавить напоминание", callback_data="remind:add"))
     builder.row(InlineKeyboardButton(text="🔄 Обновить", callback_data="remind:refresh"))
     builder.row(InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main"))
     return builder.as_markup()

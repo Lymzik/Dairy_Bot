@@ -8,6 +8,9 @@ def add_to_section_kb(msg_id: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="📋 В планы на день", callback_data=f"addto:plan:{msg_id}"),
         InlineKeyboardButton(text="🛒 В покупки", callback_data=f"addto:shop:{msg_id}"),
     )
+    builder.row(
+        InlineKeyboardButton(text="⏰ В напоминания", callback_data=f"addto:remind:{msg_id}"),
+    )
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="addto:cancel"))
     return builder.as_markup()
 

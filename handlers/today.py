@@ -25,9 +25,11 @@ async def build_today_text(user_id: int) -> str:
     if plans:
         for i, p in enumerate(plans, 1):
             text = p["text"]
-            if p["is_important"]:
-                text = f"<b>{text}</b>"
-            if p["is_done"]:
+            if p["is_important"] and not p["is_done"]:
+                text = f"<b><i>❗{text}❗</i></b>"
+            elif p["is_important"] and p["is_done"]:
+                text = f"<s><b>{text}</b></s>"
+            elif p["is_done"]:
                 text = f"<s>{text}</s>"
             icon = "✅" if p["is_done"] else ("❗" if p["is_important"] else "⬜")
             lines.append(f"  {i}. {icon} {text}")

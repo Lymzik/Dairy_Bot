@@ -11,8 +11,9 @@ router = Router()
 
 
 class ReminderForm(StatesGroup):
-    waiting_for_text = State()       # ввод текста перед выбором времени
-    waiting_for_edit_text = State()  # ввод нового текста при редактировании
+    waiting_for_text = State()        # ввод текста
+    waiting_for_manual_time = State() # ручной ввод времени (или кнопки)
+    waiting_for_edit_text = State()   # ввод нового текста при редактировании
 
 
 def _parse_remind_at(arg: str) -> datetime | None:
@@ -145,15 +146,53 @@ async def remind_add_start(call: CallbackQuery, state: FSMContext) -> None:
 @router.message(ReminderForm.waiting_for_text)
 async def remind_text_received(message: Message, state: FSMContext) -> None:
     text = message.text.strip()
-    await state.update_data(remind_text=text)
-    await state.clear()
+    await state.set_state(ReminderForm.waiting_for_manual_time)
+    _text_pending[message.from_user.id] = text
     await message.answer(
-        f"⏰ Выбери час для напоминания:\n\n<i>{text}</i>",
+        f"⏰ Выбери время или введи вручную:\n\n"
+        f"<i>{text}</i>\n\n"
+        f"<b>Вручную:</b> напиши <code>14:30</code> или <code>15.05 14:30</code>",
         reply_markup=remind_hour_kb(),
         parse_mode="HTML",
     )
-    # Сохраняем текст в pending для обработки выбора времени
-    _text_pending[message.from_user.id] = text
+
+
+@router.message(ReminderForm.waiting_for_manual_time)
+async def remind_manual_time_received(message: Message, state: FSMContext) -> None:
+    uid = message.from_user.id
+    time_arg = message.text.strip()
+    text = _text_pending.pop(uid, None)
+    if not text:
+        await state.clear()
+        await message.answer("⚠️ Сессия устарела, попробуй снова.")
+        return
+
+    remind_at = _parse_remind_at(time_arg)
+    if remind_at is None:
+        _text_pending[uid] = text
+        await message.answer(
+            f"❗ Не понял формат. Попробуй: <code>14:30</code> или <code>15.05 14:30</code>\n\n"
+            f"Или выбери час из кнопок выше.",
+            parse_mode="HTML",
+        )
+        return
+
+    if remind_at <= datetime.now():
+        _text_pending[uid] = text
+        await message.answer("❗ Это время уже прошло. Укажи будущее время.")
+        return
+
+    await state.clear()
+    from scheduler import schedule_reminder
+    reminder_id = await db.add_reminder(uid, text, remind_at)
+    await schedule_reminder(reminder_id, uid, text, remind_at)
+    await message.answer(
+        f"✅ Напоминание установлено!\n"
+        f"🔔 <b>{remind_at.strftime('%d.%m.%Y в %H:%M')}</b>\n"
+        f"📝 {text}",
+        parse_mode="HTML",
+    )
+    await _show_reminders(message, uid)
 
 
 # --- Выбор времени через кнопки ---
@@ -163,7 +202,7 @@ _edit_pending: dict[int, int] = {}  # user_id -> reminder_id
 
 
 @router.callback_query(F.data.startswith("remtime:"))
-async def remtime_callback(call: CallbackQuery) -> None:
+async def remtime_callback(call: CallbackQuery, state: FSMContext) -> None:
     parts = call.data.split(":")
     action = parts[1]
     uid = call.from_user.id
@@ -171,6 +210,7 @@ async def remtime_callback(call: CallbackQuery) -> None:
     if action == "cancel":
         _text_pending.pop(uid, None)
         _edit_pending.pop(uid, None)
+        await state.clear()
         await call.message.edit_text("❌ Отменено.")
         await call.answer()
         return
@@ -219,6 +259,7 @@ async def remtime_callback(call: CallbackQuery) -> None:
             await call.answer("⚠️ Текст напоминания потерян, попробуй снова.")
             return
 
+        await state.clear()
         new_id = await db.add_reminder(uid, text, remind_at)
         await schedule_reminder(new_id, uid, text, remind_at)
 

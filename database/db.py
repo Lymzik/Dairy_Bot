@@ -17,9 +17,16 @@ async def create_tables() -> None:
                 text TEXT NOT NULL,
                 is_done INTEGER DEFAULT 0,
                 is_important INTEGER DEFAULT 0,
+                carried_over INTEGER DEFAULT 0,
                 created_at TEXT NOT NULL
             )
         """)
+        # Миграция: добавить колонку если её нет (для существующих БД)
+        try:
+            await db.execute("ALTER TABLE plans ADD COLUMN carried_over INTEGER DEFAULT 0")
+            await db.commit()
+        except Exception:
+            pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS shopping (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

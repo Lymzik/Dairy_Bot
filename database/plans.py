@@ -31,7 +31,7 @@ async def get_yesterday_undone(user_id: int) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT * FROM plans WHERE user_id = ? AND DATE(created_at) = ? AND is_done = 0 ORDER BY id",
+            "SELECT * FROM plans WHERE user_id = ? AND DATE(created_at) = ? AND is_done = 0 AND carried_over = 0 ORDER BY id",
             (user_id, yesterday),
         )
         rows = await cursor.fetchall()
@@ -49,6 +49,20 @@ async def carry_over_plans(user_id: int, plan_ids: list[int]) -> None:
                     "INSERT INTO plans (user_id, text, is_important, created_at) VALUES (?, ?, ?, ?)",
                     (user_id, row["text"], row["is_important"], datetime.now().isoformat()),
                 )
+            # Помечаем как перенесённую чтобы не предлагать снова
+            await db.execute(
+                "UPDATE plans SET carried_over = 1 WHERE id = ?", (plan_id,)
+            )
+        await db.commit()
+
+
+async def dismiss_carryover(plan_ids: list[int]) -> None:
+    """Помечает задачи как 'отказано в переносе' — больше не показывать."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        for plan_id in plan_ids:
+            await db.execute(
+                "UPDATE plans SET carried_over = 1 WHERE id = ?", (plan_id,)
+            )
         await db.commit()
 
 

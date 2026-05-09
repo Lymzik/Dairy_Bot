@@ -304,6 +304,8 @@ async def carryover_callback(call: CallbackQuery) -> None:
     action = parts[1]
 
     if action == "no":
+        ids = [int(i) for i in parts[2].split(",") if i]
+        await db.dismiss_carryover(ids)
         await call.message.edit_text("👌 Хорошо, старые задачи остались в прошлом.")
         await call.answer()
         return

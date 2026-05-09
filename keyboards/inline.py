@@ -28,6 +28,16 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def carry_over_kb(plan_ids: list[int]) -> InlineKeyboardMarkup:
+    ids_str = ",".join(str(i) for i in plan_ids)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Перенести все", callback_data=f"carryover:yes:{ids_str}"),
+        InlineKeyboardButton(text="❌ Не переносить", callback_data="carryover:no"),
+    )
+    return builder.as_markup()
+
+
 def plans_list_kb(plans: list[dict]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for i, plan in enumerate(plans, 1):

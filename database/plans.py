@@ -25,6 +25,33 @@ async def get_today_plans(user_id: int) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+async def get_yesterday_undone(user_id: int) -> list[dict]:
+    from datetime import timedelta
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM plans WHERE user_id = ? AND DATE(created_at) = ? AND is_done = 0 ORDER BY id",
+            (user_id, yesterday),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def carry_over_plans(user_id: int, plan_ids: list[int]) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        for plan_id in plan_ids:
+            cur = await db.execute("SELECT text, is_important FROM plans WHERE id = ?", (plan_id,))
+            row = await cur.fetchone()
+            if row:
+                await db.execute(
+                    "INSERT INTO plans (user_id, text, is_important, created_at) VALUES (?, ?, ?, ?)",
+                    (user_id, row["text"], row["is_important"], datetime.now().isoformat()),
+                )
+        await db.commit()
+
+
 async def get_plan_by_pos(user_id: int, pos: int) -> dict | None:
     plans = await get_today_plans(user_id)
     if 1 <= pos <= len(plans):

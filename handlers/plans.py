@@ -3,9 +3,23 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from database import plans as db
-from keyboards.inline import plans_list_kb
+from keyboards.inline import plans_list_kb, carry_over_kb
 
 router = Router()
+
+
+async def _check_and_notify_carryover(target: Message, user_id: int) -> None:
+    """Проверяет вчерашние невыполненные задачи и предлагает перенести."""
+    yesterday_undone = await db.get_yesterday_undone(user_id)
+    if not yesterday_undone:
+        return
+    lines = ["📌 <b>Вчера остались невыполненные задачи:</b>\n"]
+    for i, p in enumerate(yesterday_undone, 1):
+        icon = "⚠️" if p["is_important"] else "⬜"
+        lines.append(f"{i}. {icon} {p['text']}")
+    lines.append("\nПеренести их на сегодня?")
+    ids = [p["id"] for p in yesterday_undone]
+    await target.answer("\n".join(lines), reply_markup=carry_over_kb(ids), parse_mode="HTML")
 
 
 def _format_plans(plans: list[dict]) -> str:
@@ -26,9 +40,9 @@ def _format_plans(plans: list[dict]) -> str:
 
 @router.message(Command("plans"))
 async def cmd_plans(message: Message) -> None:
+    await _check_and_notify_carryover(message, message.from_user.id)
     plans = await db.get_today_plans(message.from_user.id)
-    text = _format_plans(plans)
-    await message.answer(text, reply_markup=plans_list_kb(plans), parse_mode="HTML")
+    await message.answer(_format_plans(plans), reply_markup=plans_list_kb(plans), parse_mode="HTML")
 
 
 @router.message(Command("addplan"))
@@ -215,6 +229,28 @@ async def plan_callback(call: CallbackQuery) -> None:
     plans = await db.get_today_plans(call.from_user.id)
     await call.message.edit_text(
         _format_plans(plans),
+        reply_markup=plans_list_kb(plans),
+        parse_mode="HTML",
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("carryover:"))
+async def carryover_callback(call: CallbackQuery) -> None:
+    parts = call.data.split(":", 2)
+    action = parts[1]
+
+    if action == "no":
+        await call.message.edit_text("👌 Хорошо, старые задачи остались в прошлом.")
+        await call.answer()
+        return
+
+    # action == "yes"
+    ids = [int(i) for i in parts[2].split(",") if i]
+    await db.carry_over_plans(call.from_user.id, ids)
+    plans = await db.get_today_plans(call.from_user.id)
+    await call.message.edit_text(
+        f"✅ Перенесено задач: {len(ids)}\n\n{_format_plans(plans)}",
         reply_markup=plans_list_kb(plans),
         parse_mode="HTML",
     )

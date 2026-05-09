@@ -44,6 +44,8 @@ async def menu_section_callback(call: CallbackQuery) -> None:
     uid = call.from_user.id
 
     if section == "plans":
+        from handlers.plans import _check_and_notify_carryover
+        await _check_and_notify_carryover(call.message, uid)
         plans = await get_today_plans(uid)
         await call.message.answer(
             _format_plans(plans),

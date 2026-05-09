@@ -1,0 +1,221 @@
+from datetime import date
+from aiogram import Router, F
+from aiogram.filters import Command
+from aiogram.types import Message, CallbackQuery
+from database import plans as db
+from keyboards.inline import plans_list_kb
+
+router = Router()
+
+
+def _format_plans(plans: list[dict]) -> str:
+    if not plans:
+        return "📋 Планов на сегодня нет.\n\nПросто напиши мне, что нужно сделать — и я добавлю в список."
+    today_str = date.today().strftime("%d.%m.%Y")
+    lines = [f"📋 <b>Планы на сегодня ({today_str}):</b>\n"]
+    for i, p in enumerate(plans, 1):
+        text = p["text"]
+        if p["is_important"]:
+            text = f"<b>{text}</b>"
+        if p["is_done"]:
+            text = f"<s>{text}</s>"
+        icon = "✅" if p["is_done"] else ("⚠️" if p["is_important"] else "⬜")
+        lines.append(f"{i}. {icon} {text}")
+    return "\n".join(lines)
+
+
+@router.message(Command("plans"))
+async def cmd_plans(message: Message) -> None:
+    plans = await db.get_today_plans(message.from_user.id)
+    text = _format_plans(plans)
+    await message.answer(text, reply_markup=plans_list_kb(plans), parse_mode="HTML")
+
+
+@router.message(Command("addplan"))
+async def cmd_addplan(message: Message) -> None:
+    args = message.text.partition(" ")[2].strip()
+    if not args:
+        await message.answer("❗ Укажи текст плана: /addplan <i>купить продукты</i>", parse_mode="HTML")
+        return
+    items = [t.strip() for t in args.split(",") if t.strip()]
+    for item in items:
+        await db.add_plan(message.from_user.id, item)
+    plans = await db.get_today_plans(message.from_user.id)
+    added = len(items)
+    await message.answer(
+        f"✅ {'Добавлен 1 план' if added == 1 else f'Добавлено планов: {added}'}!\n\n{_format_plans(plans)}",
+        reply_markup=plans_list_kb(plans),
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("done"))
+async def cmd_done(message: Message) -> None:
+    args = message.text.partition(" ")[2].strip()
+    plan = await _get_plan(message, args)
+    if plan is None:
+        return
+    await db.set_plan_done(plan["id"], True)
+    plans = await db.get_today_plans(message.from_user.id)
+    await message.answer(_format_plans(plans), reply_markup=plans_list_kb(plans), parse_mode="HTML")
+
+
+@router.message(Command("undone"))
+async def cmd_undone(message: Message) -> None:
+    args = message.text.partition(" ")[2].strip()
+    plan = await _get_plan(message, args)
+    if plan is None:
+        return
+    await db.set_plan_done(plan["id"], False)
+    plans = await db.get_today_plans(message.from_user.id)
+    await message.answer(_format_plans(plans), reply_markup=plans_list_kb(plans), parse_mode="HTML")
+
+
+@router.message(Command("important"))
+async def cmd_important(message: Message) -> None:
+    args = message.text.partition(" ")[2].strip()
+    plan = await _get_plan(message, args)
+    if plan is None:
+        return
+    new_state = not bool(plan["is_important"])
+    await db.set_plan_important(plan["id"], new_state)
+    status = "помечен как важный ⚠️" if new_state else "снята отметка важности"
+    plans = await db.get_today_plans(message.from_user.id)
+    await message.answer(
+        f"Пункт #{args} {status}\n\n{_format_plans(plans)}",
+        reply_markup=plans_list_kb(plans),
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("delplan"))
+async def cmd_delplan(message: Message) -> None:
+    args = message.text.partition(" ")[2].strip()
+    plan = await _get_plan(message, args)
+    if plan is None:
+        return
+    await db.delete_plan(plan["id"])
+    plans = await db.get_today_plans(message.from_user.id)
+    await message.answer(
+        f"🗑 Пункт #{args} удалён.\n\n{_format_plans(plans)}",
+        reply_markup=plans_list_kb(plans),
+        parse_mode="HTML",
+    )
+
+
+# Временное хранилище текста: {message_id: text}
+_pending: dict[int, str] = {}
+
+
+@router.message(F.text & ~F.text.startswith("/"))
+async def free_text_ask_section(message: Message) -> None:
+    text = message.text.strip()
+    if not text:
+        return
+    from keyboards.inline import add_to_section_kb
+    sent = await message.answer(
+        f"Куда добавить?\n\n<i>{text}</i>",
+        reply_markup=add_to_section_kb(message.message_id),
+        parse_mode="HTML",
+    )
+    _pending[message.message_id] = text
+
+
+@router.callback_query(F.data.startswith("addto:"))
+async def addto_callback(call: CallbackQuery) -> None:
+    from database import shopping as shop_db
+    from keyboards.inline import shopping_list_kb
+    from handlers.shopping import _format_shopping
+
+    parts = call.data.split(":")
+    action = parts[1]
+
+    if action == "cancel":
+        msg_id = int(parts[2]) if len(parts) > 2 else None
+        if msg_id:
+            _pending.pop(msg_id, None)
+        await call.message.edit_text("❌ Отменено.")
+        await call.answer()
+        return
+
+    msg_id = int(parts[2])
+    text = _pending.pop(msg_id, None)
+    if not text:
+        await call.answer("⚠️ Время ожидания истекло, введи текст заново.")
+        await call.message.edit_text("⚠️ Сессия устарела. Введи текст ещё раз.")
+        return
+
+    items = [t.strip() for t in text.split(",") if t.strip()]
+    uid = call.from_user.id
+
+    if action == "plan":
+        for item in items:
+            await db.add_plan(uid, item)
+        plans = await db.get_today_plans(uid)
+        added = len(items)
+        await call.message.edit_text(
+            f"✅ {'Добавлен 1 план' if added == 1 else f'Добавлено планов: {added}'}!\n\n{_format_plans(plans)}",
+            reply_markup=plans_list_kb(plans),
+            parse_mode="HTML",
+        )
+    elif action == "shop":
+        for item in items:
+            await shop_db.add_item(uid, item)
+        shopping = await shop_db.get_shopping_list(uid)
+        added = len(items)
+        await call.message.edit_text(
+            f"🛒 {'Добавлен 1 товар' if added == 1 else f'Добавлено товаров: {added}'}!\n\n{_format_shopping(shopping)}",
+            reply_markup=shopping_list_kb(shopping),
+            parse_mode="HTML",
+        )
+
+    await call.answer()
+
+
+async def _get_plan(message: Message, arg: str) -> dict | None:
+    if not arg.isdigit():
+        await message.answer("❗ Укажи номер пункта, например: /done 2")
+        return None
+    plan = await db.get_plan_by_pos(message.from_user.id, int(arg))
+    if plan is None:
+        await message.answer("❗ Пункт с таким номером не найден.")
+    return plan
+
+
+# --- Inline callback handlers ---
+
+@router.callback_query(F.data.startswith("plan:"))
+async def plan_callback(call: CallbackQuery) -> None:
+    parts = call.data.split(":")
+    action = parts[1]
+
+    if action == "refresh":
+        plans = await db.get_today_plans(call.from_user.id)
+        await call.message.edit_text(
+            _format_plans(plans),
+            reply_markup=plans_list_kb(plans),
+            parse_mode="HTML",
+        )
+        await call.answer("Обновлено")
+        return
+
+    plan_id = int(parts[2])
+
+    if action == "done":
+        await db.set_plan_done(plan_id, True)
+    elif action == "undone":
+        await db.set_plan_done(plan_id, False)
+    elif action == "imp":
+        await db.set_plan_important(plan_id, True)
+    elif action == "unimp":
+        await db.set_plan_important(plan_id, False)
+    elif action == "del":
+        await db.delete_plan(plan_id)
+
+    plans = await db.get_today_plans(call.from_user.id)
+    await call.message.edit_text(
+        _format_plans(plans),
+        reply_markup=plans_list_kb(plans),
+        parse_mode="HTML",
+    )
+    await call.answer()

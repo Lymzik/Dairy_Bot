@@ -53,7 +53,7 @@ async def cmd_addplan(message: Message) -> None:
     if not args:
         await message.answer("❗ Укажи текст плана: /addplan <i>купить продукты</i>", parse_mode="HTML")
         return
-    items = [t.strip() for t in args.split(",") if t.strip()]
+    items = _parse_items(args)
     for item in items:
         await db.add_plan(message.from_user.id, item)
     plans = await db.get_today_plans(message.from_user.id)
@@ -123,6 +123,29 @@ async def cmd_delplan(message: Message) -> None:
 _pending: dict[int, str] = {}
 
 
+def _parse_items(text: str) -> list[str]:
+    """
+    Парсит текст в список пунктов:
+    - Многострочный текст → каждая строка отдельный пункт
+    - Строки вида '1. текст', '1) текст', '- текст' → очищаем префикс
+    - Однострочный текст с запятыми → разбиваем по запятой
+    """
+    import re
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+
+    if len(lines) > 1:
+        # Многострочный — каждая строка пункт, убираем нумерацию/маркеры
+        items = []
+        for line in lines:
+            cleaned = re.sub(r'^(\d+[\.\)]\s*|[-•*]\s*)', '', line).strip()
+            if cleaned:
+                items.append(cleaned)
+        return items
+
+    # Однострочный — разбиваем по запятой
+    return [t.strip() for t in text.split(",") if t.strip()]
+
+
 @router.message(F.text & ~F.text.startswith("/"))
 async def free_text_handler(message: Message) -> None:
     uid = message.from_user.id
@@ -164,7 +187,7 @@ async def addto_callback(call: CallbackQuery) -> None:
         await call.message.edit_text("⚠️ Сессия устарела. Введи текст ещё раз.")
         return
 
-    items = [t.strip() for t in text.split(",") if t.strip()]
+    items = _parse_items(text)
     uid = call.from_user.id
 
     if action == "plan":

@@ -15,8 +15,8 @@ class ShoppingForm(StatesGroup):
 
 def _format_shopping(items: list[dict]) -> str:
     if not items:
-        return "🛒 <b>Список покупок пуст.</b>"
-    lines = ["🛒 <b>Список покупок:</b>\n"]
+        return "🛒 <b>Список покупок</b>\nСписок пуст. Нажми ➕ Добавить продукт."
+    lines = ["🛒 <b>Список покупок</b>\n"]
     for i, item in enumerate(items, 1):
         text = item["text"]
         if item["is_bought"]:

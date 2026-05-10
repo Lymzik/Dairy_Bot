@@ -24,9 +24,9 @@ async def _check_and_notify_carryover(target: Message, user_id: int) -> None:
 
 def _format_plans(plans: list[dict]) -> str:
     if not plans:
-        return "📋 Планов на сегодня нет.\n\nПросто напиши мне, что нужно сделать — и я добавлю в список."
+        return "📋 <b>Планы на сегодня</b>\nПланов пока нет. Напиши что нужно сделать — добавлю в список."
     today_str = date.today().strftime("%d.%m.%Y")
-    lines = [f"📋 <b>Планы на сегодня ({today_str}):</b>\n"]
+    lines = [f"📋 <b>Планы на сегодня ({today_str})</b>\n"]
     for i, p in enumerate(plans, 1):
         text = p["text"]
         if p["is_important"] and not p["is_done"]:

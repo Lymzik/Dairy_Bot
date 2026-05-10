@@ -33,8 +33,8 @@ def _parse_remind_at(arg: str) -> datetime | None:
 
 def _format_reminders(reminders: list[dict]) -> str:
     if not reminders:
-        return "⏰ <b>Напоминания.</b> Активных напоминаний нет."
-    lines = ["⏰ <b>Напоминания:</b>\n"]
+        return "⏰ <b>Напоминания</b>\nАктивных напоминаний нет. Нажми ➕ Добавить напоминание."
+    lines = ["⏰ <b>Напоминания</b>\n"]
     for i, r in enumerate(reminders, 1):
         dt = datetime.fromisoformat(r["remind_at"])
         lines.append(f"• 🔔 <b>{dt.strftime('%d.%m.%Y в %H:%M')}</b> — {r['text']}")

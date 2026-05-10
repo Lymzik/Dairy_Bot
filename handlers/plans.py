@@ -122,9 +122,6 @@ async def cmd_delplan(message: Message) -> None:
 # Временное хранилище текста: {message_id: text}
 _pending: dict[int, str] = {}
 
-# Хранилище текста напоминания, ожидающего ввода времени: {user_id: text}
-_remind_pending: dict[int, str] = {}
-
 
 @router.message(F.text & ~F.text.startswith("/"))
 async def free_text_handler(message: Message) -> None:
@@ -133,49 +130,7 @@ async def free_text_handler(message: Message) -> None:
     if not text:
         return
 
-    # Если ждём время для напоминания — обрабатываем его
-    if uid in _remind_pending:
-        remind_text = _remind_pending.pop(uid)
-        time_arg = text
-
-        from handlers.reminders import _parse_remind_at, _format_reminders
-        from database import reminders as rem_db
-        from scheduler import schedule_reminder
-        from keyboards.inline import reminders_list_kb
-        from datetime import datetime
-
-        remind_at = _parse_remind_at(time_arg)
-        if remind_at is None:
-            await message.answer(
-                f"❗ Не понял формат времени. Попробуй: <code>18:00</code>\n\n"
-                f"Напоминание: <i>{remind_text}</i>",
-                parse_mode="HTML",
-            )
-            _remind_pending[uid] = remind_text
-            return
-
-        if remind_at <= datetime.now():
-            await message.answer(
-                f"❗ Это время уже прошло. Укажи будущее время.\n\n"
-                f"Напоминание: <i>{remind_text}</i>",
-                parse_mode="HTML",
-            )
-            _remind_pending[uid] = remind_text
-            return
-
-        reminder_id = await rem_db.add_reminder(uid, remind_text, remind_at)
-        await schedule_reminder(reminder_id, uid, remind_text, remind_at)
-        rems = await rem_db.get_active_reminders(uid)
-        await message.answer(
-            f"✅ Напоминание установлено!\n"
-            f"🔔 <b>{remind_at.strftime('%d.%m.%Y в %H:%M')}</b>\n"
-            f"📝 {remind_text}\n\n{_format_reminders(rems)}",
-            reply_markup=reminders_list_kb(rems),
-            parse_mode="HTML",
-        )
-        return
-
-    # Иначе — спрашиваем куда добавить
+    # Спрашиваем куда добавить
     from keyboards.inline import add_to_section_kb
     await message.answer(
         f"Куда добавить?\n\n<i>{text}</i>",
@@ -234,17 +189,15 @@ async def addto_callback(call: CallbackQuery) -> None:
         )
 
     elif action == "remind":
-        from aiogram.fsm.context import FSMContext
-        # Сохраняем текст и просим время
-        _pending[msg_id] = text  # вернём обратно чтобы FSM мог забрать
+        from keyboards.inline import remind_hour_kb
+        from handlers.reminders import _text_pending as rem_pending
+        from aiogram.fsm.state import State
+        rem_pending[call.from_user.id] = text
         await call.message.edit_text(
-            f"⏰ Укажи время для напоминания:\n\n"
-            f"<i>{text}</i>\n\n"
-            f"Формат: <code>14:30</code> или <code>15.05 14:30</code>",
+            f"⏰ Выбери час или введи вручную (<code>14:30</code>):\n\n<i>{text}</i>",
+            reply_markup=remind_hour_kb(),
             parse_mode="HTML",
         )
-        # Сохраняем в отдельный pending для remind
-        _remind_pending[call.from_user.id] = text
 
     await call.answer()
 

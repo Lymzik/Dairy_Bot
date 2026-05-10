@@ -15,4 +15,6 @@ if not BOT_TOKEN:
         "Локально: создай файл .env с BOT_TOKEN=твой_токен"
     )
 
-DB_PATH: str = os.environ.get("DB_PATH", "diary.db")
+import os as _os
+_data_dir = "/data" if _os.path.isdir("/data") else "."
+DB_PATH: str = os.environ.get("DB_PATH", f"{_data_dir}/diary.db")

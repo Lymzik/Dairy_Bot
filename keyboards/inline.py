@@ -76,12 +76,12 @@ def remind_hour_kb() -> InlineKeyboardMarkup:
 
 def remind_minute_kb(hour: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for minute in range(0, 60, 30):
+    for minute in range(0, 60, 10):
         builder.button(
             text=f"{hour:02d}:{minute:02d}",
             callback_data=f"remtime:minute:{hour}:{minute}",
         )
-    builder.adjust(2)
+    builder.adjust(3)
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="remtime:back"))
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="remtime:cancel"))
     return builder.as_markup()

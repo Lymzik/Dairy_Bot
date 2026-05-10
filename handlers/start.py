@@ -6,7 +6,7 @@ from keyboards.inline import main_menu_kb
 router = Router()
 
 WELCOME_TEXT = (
-    "👋 Привет! Я твой личный <b>Ежедневник</b>.\n\n"
+    "👋 Привет! Я твой личный <b>Планер</b>.\n\n"
     "Я помогу тебе:\n"
     "📋 Планировать день\n"
     "🛒 Вести список покупок\n"

@@ -30,7 +30,7 @@ def _format_plans(plans: list[dict]) -> str:
     for i, p in enumerate(plans, 1):
         text = p["text"]
         if p["is_important"] and not p["is_done"]:
-            text = f"<b><i>❗{text}❗</i></b>"
+            text = f"<b><i>{text}</i></b>"
         elif p["is_important"] and p["is_done"]:
             text = f"<s><b>{text}</b></s>"
         elif p["is_done"]:

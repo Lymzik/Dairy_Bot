@@ -60,7 +60,8 @@ async def build_today_text(user_id: int) -> str:
     lines.append("⏰ <b>Напоминания</b>")
     if reminders:
         for r in reminders:
-            dt = datetime.fromisoformat(r["remind_at"])
+            from config import strip_tz
+            dt = strip_tz(r["remind_at"]) if isinstance(r["remind_at"], datetime) else datetime.fromisoformat(str(r["remind_at"]))
             lines.append(f"  🔔 {dt.strftime('%H:%M')} — {r['text']}")
     else:
         lines.append("  <i>Нет активных напоминаний</i>")

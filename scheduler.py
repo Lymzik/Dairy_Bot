@@ -43,7 +43,8 @@ async def restore_reminders(bot) -> None:
     reminders = await get_all_pending_reminders()
     now = datetime.now()
     for r in reminders:
-        remind_at = datetime.fromisoformat(r["remind_at"])
+        from config import strip_tz
+        remind_at = strip_tz(r["remind_at"]) if isinstance(r["remind_at"], datetime) else datetime.fromisoformat(str(r["remind_at"]))
         if remind_at > now:
             await schedule_reminder(r["id"], r["user_id"], r["text"], remind_at)
         else:

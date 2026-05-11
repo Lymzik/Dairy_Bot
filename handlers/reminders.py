@@ -36,7 +36,8 @@ def _format_reminders(reminders: list[dict]) -> str:
         return "⏰ <b>Напоминания</b>\nАктивных напоминаний нет. Нажми ➕ Добавить напоминание."
     lines = ["⏰ <b>Напоминания</b>\n"]
     for i, r in enumerate(reminders, 1):
-        dt = datetime.fromisoformat(r["remind_at"])
+        from config import strip_tz
+        dt = strip_tz(r["remind_at"]) if isinstance(r["remind_at"], datetime) else datetime.fromisoformat(str(r["remind_at"]))
         lines.append(f"• 🔔 <b>{dt.strftime('%d.%m.%Y в %H:%M')}</b> — {r['text']}")
     return "\n".join(lines)
 

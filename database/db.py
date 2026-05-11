@@ -1,49 +1,46 @@
-import aiosqlite
-from config import DB_PATH
+import asyncpg
+from config import DATABASE_URL
+
+_pool: asyncpg.Pool | None = None
 
 
-async def get_db() -> aiosqlite.Connection:
-    db = await aiosqlite.connect(DB_PATH)
-    db.row_factory = aiosqlite.Row
-    return db
+async def get_pool() -> asyncpg.Pool:
+    global _pool
+    if _pool is None:
+        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+    return _pool
 
 
 async def create_tables() -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS plans (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
                 text TEXT NOT NULL,
                 is_done INTEGER DEFAULT 0,
                 is_important INTEGER DEFAULT 0,
                 carried_over INTEGER DEFAULT 0,
-                created_at TEXT NOT NULL
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
-        # Миграция: добавить колонку если её нет (для существующих БД)
-        try:
-            await db.execute("ALTER TABLE plans ADD COLUMN carried_over INTEGER DEFAULT 0")
-            await db.commit()
-        except Exception:
-            pass
-        await db.execute("""
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS shopping (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
                 text TEXT NOT NULL,
                 is_bought INTEGER DEFAULT 0,
-                bought_at TEXT,
-                created_at TEXT NOT NULL
+                bought_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
-        await db.execute("""
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS reminders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
                 text TEXT NOT NULL,
-                remind_at TEXT NOT NULL,
+                remind_at TIMESTAMPTZ NOT NULL,
                 is_sent INTEGER DEFAULT 0
             )
         """)
-        await db.commit()

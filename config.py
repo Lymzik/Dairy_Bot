@@ -7,7 +7,6 @@ except ImportError:
     pass
 
 BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "")
-
 if not BOT_TOKEN:
     raise ValueError(
         "BOT_TOKEN не задан.\n"
@@ -15,6 +14,10 @@ if not BOT_TOKEN:
         "Локально: создай файл .env с BOT_TOKEN=твой_токен"
     )
 
-import os as _os
-_data_dir = "/data" if _os.path.isdir("/data") else "."
-DB_PATH: str = os.environ.get("DB_PATH", f"{_data_dir}/diary.db")
+DATABASE_URL: str = os.environ.get("DATABASE_URL", "")
+if not DATABASE_URL:
+    raise ValueError(
+        "DATABASE_URL не задан.\n"
+        "На Railway: переменная добавляется автоматически при подключении PostgreSQL.\n"
+        "Локально: добавь DATABASE_URL=postgresql://... в .env"
+    )

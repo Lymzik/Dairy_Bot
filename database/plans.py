@@ -1,69 +1,61 @@
-from datetime import datetime, date
-import aiosqlite
-from config import DB_PATH
+from datetime import datetime, date, timedelta
+from database.db import get_pool
 
 
 async def add_plan(user_id: int, text: str) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            "INSERT INTO plans (user_id, text, created_at) VALUES (?, ?, ?)",
-            (user_id, text, datetime.now().isoformat()),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "INSERT INTO plans (user_id, text, created_at) VALUES ($1, $2, $3) RETURNING id",
+            user_id, text, datetime.now(),
         )
-        await db.commit()
-        return cursor.lastrowid
+        return row["id"]
 
 
 async def get_today_plans(user_id: int) -> list[dict]:
-    today = date.today().isoformat()
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT * FROM plans WHERE user_id = ? AND DATE(created_at) = ? ORDER BY id",
-            (user_id, today),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM plans WHERE user_id = $1 AND created_at::date = CURRENT_DATE ORDER BY id",
+            user_id,
         )
-        rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
 
 async def get_yesterday_undone(user_id: int) -> list[dict]:
-    from datetime import timedelta
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT * FROM plans WHERE user_id = ? AND DATE(created_at) = ? AND is_done = 0 AND carried_over = 0 ORDER BY id",
-            (user_id, yesterday),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM plans WHERE user_id = $1 AND created_at::date = CURRENT_DATE - 1 "
+            "AND is_done = 0 AND carried_over = 0 ORDER BY id",
+            user_id,
         )
-        rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
 
 async def carry_over_plans(user_id: int, plan_ids: list[int]) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
+    pool = await get_pool()
+    async with pool.acquire() as conn:
         for plan_id in plan_ids:
-            cur = await db.execute("SELECT text, is_important FROM plans WHERE id = ?", (plan_id,))
-            row = await cur.fetchone()
-            if row:
-                await db.execute(
-                    "INSERT INTO plans (user_id, text, is_important, created_at) VALUES (?, ?, ?, ?)",
-                    (user_id, row["text"], row["is_important"], datetime.now().isoformat()),
-                )
-            # Помечаем как перенесённую чтобы не предлагать снова
-            await db.execute(
-                "UPDATE plans SET carried_over = 1 WHERE id = ?", (plan_id,)
+            row = await conn.fetchrow(
+                "SELECT text, is_important FROM plans WHERE id = $1", plan_id
             )
-        await db.commit()
+            if row:
+                await conn.execute(
+                    "INSERT INTO plans (user_id, text, is_important, created_at) VALUES ($1, $2, $3, $4)",
+                    user_id, row["text"], row["is_important"], datetime.now(),
+                )
+            await conn.execute(
+                "UPDATE plans SET carried_over = 1 WHERE id = $1", plan_id
+            )
 
 
 async def dismiss_carryover(plan_ids: list[int]) -> None:
-    """Помечает задачи как 'отказано в переносе' — больше не показывать."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        for plan_id in plan_ids:
-            await db.execute(
-                "UPDATE plans SET carried_over = 1 WHERE id = ?", (plan_id,)
-            )
-        await db.commit()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE plans SET carried_over = 1 WHERE id = ANY($1::int[])", plan_ids
+        )
 
 
 async def get_plan_by_pos(user_id: int, pos: int) -> dict | None:
@@ -74,66 +66,53 @@ async def get_plan_by_pos(user_id: int, pos: int) -> dict | None:
 
 
 async def set_plan_done(plan_id: int, is_done: bool) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE plans SET is_done = ? WHERE id = ?",
-            (1 if is_done else 0, plan_id),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE plans SET is_done = $1 WHERE id = $2",
+            1 if is_done else 0, plan_id,
         )
-        await db.commit()
 
 
 async def set_plan_important(plan_id: int, is_important: bool) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE plans SET is_important = ? WHERE id = ?",
-            (1 if is_important else 0, plan_id),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE plans SET is_important = $1 WHERE id = $2",
+            1 if is_important else 0, plan_id,
         )
-        await db.commit()
 
 
 async def delete_plan(plan_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
-        await db.commit()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM plans WHERE id = $1", plan_id)
 
 
 async def get_plans_stats(user_id: int) -> dict:
-    today = date.today()
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-
-        async def fetch(where: str, params: tuple) -> tuple[int, int]:
-            cur = await db.execute(
-                f"SELECT COUNT(*) as total, SUM(is_done) as done FROM plans WHERE user_id = ? AND {where}",
-                (user_id, *params),
-            )
-            row = await cur.fetchone()
-            total = row["total"] or 0
-            done = int(row["done"] or 0)
-            return total, done
-
-        today_total, today_done = await fetch("DATE(created_at) = ?", (today.isoformat(),))
-
-        week_start = today.strftime("%Y-%m-%d")
-        cur_week = await db.execute(
-            "SELECT COUNT(*) as total, SUM(is_done) as done FROM plans "
-            "WHERE user_id = ? AND DATE(created_at) >= DATE(?, '-6 days')",
-            (user_id, week_start),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        today_row = await conn.fetchrow(
+            "SELECT COUNT(*) AS total, SUM(is_done) AS done FROM plans "
+            "WHERE user_id = $1 AND created_at::date = CURRENT_DATE",
+            user_id,
         )
-        row = await cur_week.fetchone()
-        week_total, week_done = row["total"] or 0, int(row["done"] or 0)
-
-        month_str = today.strftime("%Y-%m")
-        cur_month = await db.execute(
-            "SELECT COUNT(*) as total, SUM(is_done) as done FROM plans "
-            "WHERE user_id = ? AND strftime('%Y-%m', created_at) = ?",
-            (user_id, month_str),
+        week_row = await conn.fetchrow(
+            "SELECT COUNT(*) AS total, SUM(is_done) AS done FROM plans "
+            "WHERE user_id = $1 AND created_at::date >= CURRENT_DATE - 6",
+            user_id,
         )
-        row = await cur_month.fetchone()
-        month_total, month_done = row["total"] or 0, int(row["done"] or 0)
+        month_row = await conn.fetchrow(
+            "SELECT COUNT(*) AS total, SUM(is_done) AS done FROM plans "
+            "WHERE user_id = $1 AND to_char(created_at, 'YYYY-MM') = to_char(NOW(), 'YYYY-MM')",
+            user_id,
+        )
+
+    def parse(row) -> tuple[int, int]:
+        return int(row["done"] or 0), int(row["total"] or 0)
 
     return {
-        "today": (today_done, today_total),
-        "week": (week_done, week_total),
-        "month": (month_done, month_total),
+        "today": parse(today_row),
+        "week": parse(week_row),
+        "month": parse(month_row),
     }

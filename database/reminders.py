@@ -1,52 +1,48 @@
 from datetime import datetime
-import aiosqlite
-from config import DB_PATH
+from database.db import get_pool
 
 
 async def add_reminder(user_id: int, text: str, remind_at: datetime) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            "INSERT INTO reminders (user_id, text, remind_at) VALUES (?, ?, ?)",
-            (user_id, text, remind_at.isoformat()),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "INSERT INTO reminders (user_id, text, remind_at) VALUES ($1, $2, $3) RETURNING id",
+            user_id, text, remind_at,
         )
-        await db.commit()
-        return cursor.lastrowid
+        return row["id"]
 
 
 async def get_active_reminders(user_id: int) -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
-            "SELECT * FROM reminders WHERE user_id = ? AND is_sent = 0 ORDER BY remind_at",
-            (user_id,),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM reminders WHERE user_id = $1 AND is_sent = 0 ORDER BY remind_at",
+            user_id,
         )
-        rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
 
 async def get_all_pending_reminders() -> list[dict]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute(
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
             "SELECT * FROM reminders WHERE is_sent = 0 ORDER BY remind_at",
         )
-        rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
 
 async def mark_reminder_sent(reminder_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE reminders SET is_sent = 1 WHERE id = ?",
-            (reminder_id,),
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE reminders SET is_sent = 1 WHERE id = $1", reminder_id,
         )
-        await db.commit()
 
 
 async def delete_reminder(reminder_id: int) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,))
-        await db.commit()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM reminders WHERE id = $1", reminder_id)
 
 
 async def get_reminder_by_pos(user_id: int, pos: int) -> dict | None:

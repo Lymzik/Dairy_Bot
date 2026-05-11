@@ -177,7 +177,12 @@ async def shop_add_receive(message: Message) -> None:
     if uid not in _shop_add_pending:
         return
     _shop_add_pending.discard(uid)
-    items_text = [t.strip() for t in message.text.split(",") if t.strip()]
+    raw = message.text
+    # Если текст многострочный — делим по строкам, иначе по запятым
+    if "\n" in raw:
+        items_text = [t.strip() for t in raw.splitlines() if t.strip()]
+    else:
+        items_text = [t.strip() for t in raw.split(",") if t.strip()]
     for item in items_text:
         await db.add_item(uid, item)
     items = await db.get_shopping_list(uid)

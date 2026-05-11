@@ -2,12 +2,13 @@ from datetime import datetime, date, timedelta
 from database.db import get_pool
 
 
-async def add_plan(user_id: int, text: str) -> int:
+async def add_plan(user_id: int, text: str, for_date: date | None = None) -> int:
     pool = await get_pool()
+    created_at = datetime.combine(for_date, datetime.min.time()) if for_date else datetime.now()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             "INSERT INTO plans (user_id, text, created_at) VALUES ($1, $2, $3) RETURNING id",
-            user_id, text, datetime.now(),
+            user_id, text, created_at,
         )
         return row["id"]
 

@@ -1,5 +1,8 @@
+from datetime import date, timedelta
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+DAYS_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 
 
 def add_to_section_kb(msg_id: int) -> InlineKeyboardMarkup:
@@ -11,6 +14,34 @@ def add_to_section_kb(msg_id: int) -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="⏰ В напоминания", callback_data=f"addto:remind:{msg_id}"),
     )
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="addto:cancel"))
+    return builder.as_markup()
+
+
+def plan_date_kb(msg_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура выбора даты для плана: сегодня, завтра, следующие 5 дней."""
+    builder = InlineKeyboardBuilder()
+    today = date.today()
+
+    # Сегодня и завтра
+    builder.row(
+        InlineKeyboardButton(
+            text="📅 Сегодня",
+            callback_data=f"plandate:{msg_id}:{today.isoformat()}",
+        ),
+        InlineKeyboardButton(
+            text=f"➡️ Завтра ({DAYS_RU[(today + timedelta(days=1)).weekday()]})",
+            callback_data=f"plandate:{msg_id}:{(today + timedelta(days=1)).isoformat()}",
+        ),
+    )
+    # Следующие 5 дней
+    for i in range(2, 7):
+        d = today + timedelta(days=i)
+        builder.button(
+            text=f"{DAYS_RU[d.weekday()]} {d.strftime('%d.%m')}",
+            callback_data=f"plandate:{msg_id}:{d.isoformat()}",
+        )
+    builder.adjust(2, 2, 3)
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="addto:cancel"))
     return builder.as_markup()
 

@@ -181,7 +181,7 @@ async def addto_callback(call: CallbackQuery) -> None:
         return
 
     msg_id = int(parts[2])
-    text = _pending.pop(msg_id, None)
+    text = _pending.get(msg_id)  # не pop — текст нужен и для plandate
     if not text:
         await call.answer("⚠️ Время ожидания истекло, введи текст заново.")
         await call.message.edit_text("⚠️ Сессия устарела. Введи текст ещё раз.")
@@ -191,13 +191,12 @@ async def addto_callback(call: CallbackQuery) -> None:
     uid = call.from_user.id
 
     if action == "plan":
-        for item in items:
-            await db.add_plan(uid, item)
-        plans = await db.get_today_plans(uid)
-        added = len(items)
+        # Показываем выбор даты вместо немедленного добавления
+        from keyboards.inline import plan_date_kb
+        preview = "\n".join(f"• {it}" for it in items)
         await call.message.edit_text(
-            f"✅ {'Добавлен 1 план' if added == 1 else f'Добавлено планов: {added}'}!\n\n{_format_plans(plans)}",
-            reply_markup=plans_list_kb(plans),
+            f"📅 На какой день добавить?\n\n<i>{preview}</i>",
+            reply_markup=plan_date_kb(msg_id),
             parse_mode="HTML",
         )
     elif action == "shop":
@@ -295,4 +294,44 @@ async def carryover_callback(call: CallbackQuery) -> None:
         reply_markup=plans_list_kb(plans),
         parse_mode="HTML",
     )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith("plandate:"))
+async def plandate_callback(call: CallbackQuery) -> None:
+    from datetime import date as date_type
+    parts = call.data.split(":")
+    msg_id = int(parts[1])
+    chosen_date = date_type.fromisoformat(parts[2])
+
+    text = _pending.pop(msg_id, None)
+    if not text:
+        await call.answer("⚠️ Сессия устарела. Введи текст ещё раз.")
+        await call.message.edit_text("⚠️ Сессия устарела. Введи текст ещё раз.")
+        return
+
+    items = _parse_items(text)
+    uid = call.from_user.id
+    today = date_type.today()
+
+    for item in items:
+        await db.add_plan(uid, item, for_date=chosen_date)
+
+    added = len(items)
+    if chosen_date == today:
+        plans = await db.get_today_plans(uid)
+        await call.message.edit_text(
+            f"✅ {'Добавлен 1 план' if added == 1 else f'Добавлено планов: {added}'} на сегодня!\n\n{_format_plans(plans)}",
+            reply_markup=plans_list_kb(plans),
+            parse_mode="HTML",
+        )
+    else:
+        from keyboards.inline import main_menu_kb
+        day_label = chosen_date.strftime("%d.%m.%Y")
+        await call.message.edit_text(
+            f"✅ {'Добавлен 1 план' if added == 1 else f'Добавлено планов: {added}'} на <b>{day_label}</b>!\n\n"
+            + "\n".join(f"• {it}" for it in items),
+            reply_markup=main_menu_kb(),
+            parse_mode="HTML",
+        )
     await call.answer()

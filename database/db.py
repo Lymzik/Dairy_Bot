@@ -22,6 +22,7 @@ async def create_tables() -> None:
                 is_done INTEGER DEFAULT 0,
                 is_important INTEGER DEFAULT 0,
                 carried_over INTEGER DEFAULT 0,
+                deleted_at TIMESTAMPTZ DEFAULT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
@@ -32,6 +33,7 @@ async def create_tables() -> None:
                 text TEXT NOT NULL,
                 is_bought INTEGER DEFAULT 0,
                 bought_at TIMESTAMPTZ,
+                deleted_at TIMESTAMPTZ DEFAULT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
@@ -44,3 +46,12 @@ async def create_tables() -> None:
                 is_sent INTEGER DEFAULT 0
             )
         """)
+        # Миграции для существующих таблиц
+        for col_sql in [
+            "ALTER TABLE plans ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL",
+            "ALTER TABLE shopping ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL",
+        ]:
+            try:
+                await conn.execute(col_sql)
+            except Exception:
+                pass

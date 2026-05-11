@@ -157,6 +157,23 @@ async def shop_callback(call: CallbackQuery) -> None:
     if action == "buy":
         await db.mark_bought(item_id, True)
     elif action == "del":
+        await db.soft_delete_item(item_id)
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        from aiogram.types import InlineKeyboardButton
+        items = await db.get_shopping_list(call.from_user.id)
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="↩️ Восстановить", callback_data=f"shop:restore:{item_id}"))
+        builder.row(InlineKeyboardButton(text="🗑 Удалить навсегда", callback_data=f"shop:purge:{item_id}"))
+        await call.message.edit_text(
+            f"🗑 Товар удалён.\n\n{_format_shopping(items)}",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML",
+        )
+        await call.answer()
+        return
+    elif action == "restore":
+        await db.restore_item(item_id)
+    elif action == "purge":
         await db.delete_item(item_id)
 
     items = await db.get_shopping_list(call.from_user.id)

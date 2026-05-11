@@ -16,7 +16,7 @@ async def get_shopping_list(user_id: int) -> list[dict]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT * FROM shopping WHERE user_id = $1 ORDER BY id",
+            "SELECT * FROM shopping WHERE user_id = $1 AND deleted_at IS NULL ORDER BY id",
             user_id,
         )
         return [dict(r) for r in rows]
@@ -45,6 +45,22 @@ async def edit_item(item_id: int, new_text: str) -> None:
         await conn.execute(
             "UPDATE shopping SET text = $1 WHERE id = $2",
             new_text, item_id,
+        )
+
+
+async def soft_delete_item(item_id: int) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE shopping SET deleted_at = NOW() WHERE id = $1", item_id
+        )
+
+
+async def restore_item(item_id: int) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE shopping SET deleted_at = NULL WHERE id = $1", item_id
         )
 
 

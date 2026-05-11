@@ -17,7 +17,7 @@ async def get_today_plans(user_id: int) -> list[dict]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT * FROM plans WHERE user_id = $1 AND created_at::date = CURRENT_DATE ORDER BY id",
+            "SELECT * FROM plans WHERE user_id = $1 AND created_at::date = CURRENT_DATE AND deleted_at IS NULL ORDER BY id",
             user_id,
         )
         return [dict(r) for r in rows]
@@ -81,6 +81,22 @@ async def set_plan_important(plan_id: int, is_important: bool) -> None:
         await conn.execute(
             "UPDATE plans SET is_important = $1 WHERE id = $2",
             1 if is_important else 0, plan_id,
+        )
+
+
+async def soft_delete_plan(plan_id: int) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE plans SET deleted_at = NOW() WHERE id = $1", plan_id
+        )
+
+
+async def restore_plan(plan_id: int) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE plans SET deleted_at = NULL WHERE id = $1", plan_id
         )
 
 

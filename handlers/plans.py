@@ -262,6 +262,23 @@ async def plan_callback(call: CallbackQuery) -> None:
     elif action == "unimp":
         await db.set_plan_important(plan_id, False)
     elif action == "del":
+        await db.soft_delete_plan(plan_id)
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        from aiogram.types import InlineKeyboardButton
+        plans = await db.get_today_plans(call.from_user.id)
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="↩️ Восстановить", callback_data=f"plan:restore:{plan_id}"))
+        builder.row(InlineKeyboardButton(text="🗑 Удалить навсегда", callback_data=f"plan:purge:{plan_id}"))
+        await call.message.edit_text(
+            f"🗑 Пункт удалён.\n\n{_format_plans(plans)}",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML",
+        )
+        await call.answer()
+        return
+    elif action == "restore":
+        await db.restore_plan(plan_id)
+    elif action == "purge":
         await db.delete_plan(plan_id)
 
     plans = await db.get_today_plans(call.from_user.id)

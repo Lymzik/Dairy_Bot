@@ -16,7 +16,16 @@ async def get_shopping_list(user_id: int) -> list[dict]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT * FROM shopping WHERE user_id = $1 AND deleted_at IS NULL ORDER BY id",
+            """
+            SELECT * FROM shopping
+            WHERE user_id = $1
+              AND deleted_at IS NULL
+              AND (
+                is_bought = 0
+                OR bought_at::date = CURRENT_DATE
+              )
+            ORDER BY id
+            """,
             user_id,
         )
         return [dict(r) for r in rows]
@@ -74,7 +83,7 @@ async def clear_bought(user_id: int) -> int:
     pool = await get_pool()
     async with pool.acquire() as conn:
         result = await conn.execute(
-            "DELETE FROM shopping WHERE user_id = $1 AND is_bought = 1",
+            "UPDATE shopping SET deleted_at = NOW() WHERE user_id = $1 AND is_bought = 1 AND deleted_at IS NULL",
             user_id,
         )
         return int(result.split()[-1])
@@ -96,3 +105,25 @@ async def get_monthly_bought(user_id: int) -> list[dict]:
             user_id,
         )
         return [dict(r) for r in rows]
+
+
+async def get_shopping_stats(user_id: int) -> dict:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        today_row = await conn.fetchrow(
+            "SELECT COUNT(*) AS cnt FROM shopping WHERE user_id = $1 AND is_bought = 1 AND bought_at::date = CURRENT_DATE",
+            user_id,
+        )
+        week_row = await conn.fetchrow(
+            "SELECT COUNT(*) AS cnt FROM shopping WHERE user_id = $1 AND is_bought = 1 AND bought_at::date >= CURRENT_DATE - 6",
+            user_id,
+        )
+        month_row = await conn.fetchrow(
+            "SELECT COUNT(*) AS cnt FROM shopping WHERE user_id = $1 AND is_bought = 1 AND to_char(bought_at, 'YYYY-MM') = to_char(NOW(), 'YYYY-MM')",
+            user_id,
+        )
+    return {
+        "today": int(today_row["cnt"] or 0),
+        "week": int(week_row["cnt"] or 0),
+        "month": int(month_row["cnt"] or 0),
+    }
